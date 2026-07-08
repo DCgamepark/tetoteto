@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tetris V2</title>
+
+<style>
+body{
+    margin:0;
+    background:#111;
+    color:#fff;
+    font-family:sans-serif;
+    text-align:center;
+}
+
+.wrapper{
+    display:flex;
+    justify-content:center;
+    gap:20px;
+    flex-wrap:wrap;
+    padding:10px;
+}
+
+canvas{
+    background:#000;
+    border:2px solid #444;
+}
+
+.side{
+    width:180px;
+}
+
+.panel{
+    margin-bottom:15px;
+}
+
+h3{
+    margin:5px 0;
+}
+
+.value{
+    font-size:22px;
+    font-weight:bold;
+}
+
+button{
+    width:70px;
+    height:70px;
+    font-size:26px;
+    margin:4px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>TETRIS V2</h2>
+
+<div class="wrapper">
+
+<div class="side">
+
+<div class="panel">
+<h3>HOLD</h3>
+<canvas id="hold" width="80" height="80"></canvas>
+</div>
+
+<div class="panel">
+スコア
+<div id="score" class="value">0</div>
+</div>
+
+<div class="panel">
+レベル
+<div id="level" class="value">1</div>
+</div>
+
+<div class="panel">
+ライン
+<div id="lines" class="value">0</div>
+</div>
+
+</div>
+
+<canvas id="game" width="240" height="400"></canvas>
+
+<div class="side">
+
+<h3>NEXT</h3>
+
+<canvas id="next1" width="80" height="80"></canvas>
+<canvas id="next2" width="80" height="80"></canvas>
+<canvas id="next3" width="80" height="80"></canvas>
+<canvas id="next4" width="80" height="80"></canvas>
+<canvas id="next5" width="80" height="80"></canvas>
+
+</div>
+
+</div>
+
+<script>
+
+// ===== Canvas =====
+
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+ctx.scale(20,20);
+
+const holdCanvas=document.getElementById("hold");
+const holdCtx=holdCanvas.getContext("2d");
+holdCtx.scale(20,20);
+
+const nextCtxs=[
+document.getElementById("next1").getContext("2d"),
+document.getElementById("next2").getContext("2d"),
+document.getElementById("next3").getContext("2d"),
+document.getElementById("next4").getContext("2d"),
+document.getElementById("next5").getContext("2d")
+];
+
+nextCtxs.forEach(c=>c.scale(20,20));
+
+// ===== 色 =====
+
+const COLORS=[
+null,
+"#A000F0",
+"#F0F000",
+"#F0A000",
+"#0000F0",
+"#00F0F0",
+"#00F000",
+"#F00000"
+];
+
+// ===== ミノ =====
+
+const SHAPES={
+
+T:[
+[0,1,0],
+[1,1,1],
+[0,0,0]
+],
+
+O:[
+[2,2],
+[2,2]
+],
+
+L:[
+[0,0,3],
+[3,3,3],
+[0,0,0]
+],
+
+J:[
+[4,0,0],
+[4,4,4],
+[0,0,0]
+],
+
+I:[
+[0,0,0,0],
+[5,5,5,5],
+[0,0,0,0],
+[0,0,0,0]
+],
+
+S:[
+[0,6,6],
+[6,6,0],
+[0,0,0]
+],
+
+Z:[
+[7,7,0],
+[0,7,7],
+[0,0,0]
+]
+
+};
+
+// ===== フィールド =====
+
+function createMatrix(w,h){
+
+    return Array.from(
+        {length:h},
+        ()=>Array(w).fill(0)
+    );
+}
+
+const arena=createMatrix(12,20);
+
+// ===== プレイヤー =====
+
+const player={
+
+pos:{x:0,y:0},
+
+matrix:null,
+
+score:0,
+
+level:1,
+
+lines:0
+
+};
+
+// ===== HOLD =====
+
+let holdPiece=null;
+
+let holdLocked=false;
+
+// ===== 7バッグ =====
+
+let bag=[];
+
+function shuffle(arr){
+
+    for(let i=arr.length-1;i>0;i--){
+
+        const j=Math.floor(
+            Math.random()*(i+1)
+        );
+
+        [arr[i],arr[j]]=
+        [arr[j],arr[i]];
+    }
+
+    return arr;
+}
+
+function refillBag(){
+
+    bag.push(
+        ...shuffle(
+        ["T","O","L","J","I","S","Z"]
+        )
+    );
+}
+
+function getNextType(){
+
+    if(bag.length<7)
+        refillBag();
+
+    return bag.shift();
+}
+
+// ===== NEXT =====
+
+const nextQueue=[];
+
+function initQueue(){
+
+    while(nextQueue.length<5){
+
+        nextQueue.push(
+            getNextType()
+        );
+    }
+}
+
+// ===== ミノ生成 =====
+
+function createPiece(type){
+
+    return SHAPES[type]
+        .map(r=>[...r]);
+}
+
+// ===== 描画 =====
+
+function drawMatrix(
+ctx,
+matrix,
+offset,
+ghost=false
+){
+
+ctx.globalAlpha=
+ghost?0.25:1;
+
+matrix.forEach((row,y)=>{
+
+row.forEach((value,x)=>{
+
+if(value){
+
+ctx.fillStyle=
+COLORS[value];
+
+ctx.fillRect(
+x+offset.x,
+y+offset.y,
+1,
+1
+);
+
+ctx.strokeStyle=
+"#000";
+
+ctx.lineWidth=0.05;
+
+ctx.strokeRect(
+x+offset.x,
+y+offset.y,
+1,
+1
+);
+
+}
+
+});
+
+});
+
+ctx.globalAlpha=1;
+}
+
+// ===== ゴースト =====
+
+function getGhost(){
+
+const ghost={
+
+matrix:player.matrix,
+
+pos:{
+x:player.pos.x,
+y:player.pos.y
+}
+
+};
+
+while(
+!collide(
+arena,
+ghost
+)
+){
+ghost.pos.y++;
+}
+
+ghost.pos.y--;
+
+return ghost;
+}
+
+// ===== 描画 =====
+
+function draw(){
+
+ctx.fillStyle="#000";
+
+ctx.fillRect(
+0,
+0,
+canvas.width,
+canvas.height
+);
+
+drawMatrix(
+ctx,
+arena,
+{x:0,y:0}
+);
+
+if(player.matrix){
+
+const ghost=getGhost();
+
+drawMatrix(
+ctx,
+ghost.matrix,
+ghost.pos,
+true
+);
+
+drawMatrix(
+ctx,
+player.matrix,
+player.pos
+);
+
+}
+
+}
+
+// ===== サイド描画 =====
+
+function drawMini(
+ctx,
+piece
+){
+
+ctx.fillStyle="#000";
+
+ctx.fillRect(0,0,4,4);
+
+if(!piece) return;
+
+drawMatrix(
+ctx,
+createPiece(piece),
+{x:0.5,y:0.5}
+);
+
+}
+
+function drawSide(){
+
+drawMini(
+holdCtx,
+holdPiece
+);
+
+for(let i=0;i<5;i++){
+
+drawMini(
+nextCtxs[i],
+nextQueue[i]
+);
+
+}
+
+}
+
+// ===== UI =====
+
+function updateUI(){
+
+document.getElementById(
+"score"
+).textContent=
+player.score;
+
+document.getElementById(
+"level"
+).textContent=
+player.level;
+
+document.getElementById(
+"lines"
+).textContent=
+player.lines;
+
+}
+// ===== 衝突判定 =====
+
+function collide(arena,player){
+
+const m=player.matrix;
+const o=player.pos;
+
+for(let y=0;y<m.length;y++){
+
+for(let x=0;x<m[y].length;x++){
+
+if(
+m[y][x]!==0 &&
+(
+arena[y+o.y] &&
+arena[y+o.y][x+o.x]
+)!==0
+){
+return true;
+}
+
+}
+
+}
+
+return false;
+}
+
+// ===== 合体 =====
+
+function merge(arena,player){
+
+player.matrix.forEach((row,y)=>{
+
+row.forEach((value,x)=>{
+
+if(value){
+
+arena[y+player.pos.y]
+[x+player.pos.x]=value;
+
+}
+
+});
+
+});
+
+}
+
+// ===== ライン消去 =====
+
+function arenaSweep(){
+
+let rowCount=1;
+
+outer:
+for(
+let y=arena.length-1;
+y>=0;
+y--
+){
+
+for(
+let x=0;
+x<arena[y].length;
+x++
+){
+
+if(arena[y][x]===0){
+
+continue outer;
+
+}
+
+}
+
+const row=
+arena.splice(y,1)[0]
+.fill(0);
+
+arena.unshift(row);
+
+y++;
+
+player.score+=
+rowCount*100;
+
+player.lines++;
+
+rowCount*=2;
+
+}
+
+player.level=
+1+
+Math.floor(
+player.lines/10
+);
+
+updateUI();
+}
+
+// ===== ミノ出現 =====
+
+function playerReset(){
+
+const type=
+nextQueue.shift();
+
+nextQueue.push(
+getNextType()
+);
+
+player.matrix=
+createPiece(type);
+
+player.pos.y=0;
+
+player.pos.x=
+(
+arena[0].length/2 |
+0
+)-
+(
+player.matrix[0].length/2 |
+0
+);
+
+holdLocked=false;
+
+if(
+collide(
+arena,
+player
+)
+){
+
+alert(
+"GAME OVER\nScore : "+
+player.score
+);
+
+restart();
+
+}
+
+drawSide();
+}
+
+// ===== HOLD =====
+
+function hold(){
+
+if(holdLocked)
+return;
+
+const current=
+getPieceType(
+player.matrix
+);
+
+if(!holdPiece){
+
+holdPiece=current;
+
+playerReset();
+
+}else{
+
+const temp=
+holdPiece;
+
+holdPiece=
+current;
+
+player.matrix=
+createPiece(temp);
+
+player.pos.y=0;
+
+player.pos.x=
+(
+arena[0].length/2|0
+)-
+(
+player.matrix[0].length/2|0
+);
+
+}
+
+holdLocked=true;
+
+drawSide();
+}
+
+// ===== 種類取得 =====
+
+function getPieceType(matrix){
+
+const v=
+matrix.flat()
+.find(n=>n!==0);
+
+switch(v){
+
+case 1:return "T";
+case 2:return "O";
+case 3:return "L";
+case 4:return "J";
+case 5:return "I";
+case 6:return "S";
+case 7:return "Z";
+
+}
+
+}
+
+// ===== 回転 =====
+
+function rotate(matrix){
+
+for(
+let y=0;
+y<matrix.length;
+y++
+){
+
+for(
+let x=0;
+x<y;
+x++
+){
+
+[
+matrix[x][y],
+matrix[y][x]
+]=
+[
+matrix[y][x],
+matrix[x][y]
+];
+
+}
+
+}
+
+matrix.forEach(
+row=>row.reverse()
+);
+
+}
+
+// ===== 回転操作 =====
+
+function playerRotate(){
+
+const backup=
+player.matrix.map(
+r=>[...r]
+);
+
+rotate(player.matrix);
+
+if(
+collide(
+arena,
+player
+)
+){
+
+player.matrix=
+backup;
+
+}
+
+}
+
+// ===== 左右移動 =====
+
+function playerMove(dir){
+
+player.pos.x+=dir;
+
+if(
+collide(
+arena,
+player
+)
+){
+
+player.pos.x-=dir;
+
+}
+
+}
+
+// ===== ソフトドロップ =====
+
+function playerDrop(){
+
+player.pos.y++;
+
+if(
+collide(
+arena,
+player
+)
+){
+
+player.pos.y--;
+
+merge(
+arena,
+player
+);
+
+arenaSweep();
+
+playerReset();
+
+}
+
+dropCounter=0;
+}
+
+// ===== ハードドロップ =====
+
+function hardDrop(){
+
+const ghost=
+getGhost();
+
+player.pos.y=
+ghost.pos.y;
+
+merge(
+arena,
+player
+);
+
+arenaSweep();
+
+playerReset();
+
+}
+
+// ===== スコア加点 =====
+
+function addDropScore(){
+
+player.score+=1;
+
+updateUI();
+}
+
+// ===== ゲーム管理 =====
+
+let dropCounter=0;
+
+let dropInterval=800;
+
+let lastTime=0;
+
+let paused=false;
+
+// ===== 更新 =====
+
+function update(time=0){
+
+const delta=
+time-lastTime;
+
+lastTime=time;
+
+if(!paused){
+
+dropCounter+=delta;
+
+dropInterval=
+Math.max(
+100,
+800-
+(player.level-1)*60
+);
+
+if(
+dropCounter>
+dropInterval
+){
+
+playerDrop();
+
+}
+
+draw();
+
+}
+
+requestAnimationFrame(
+update
+);
+
+}
+
+// ===== リスタート =====
+
+function restart(){
+
+arena.forEach(
+row=>row.fill(0)
+);
+
+player.score=0;
+player.level=1;
+player.lines=0;
+
+holdPiece=null;
+holdLocked=false;
+
+bag.length=0;
+nextQueue.length=0;
+
+refillBag();
+
+initQueue();
+
+playerReset();
+
+updateUI();
+
+drawSide();
+
+}
+
+// ===== キー操作 =====
+
+document.addEventListener(
+"keydown",
+event=>{
+
+switch(event.code){
+
+case "ArrowLeft":
+playerMove(-1);
+break;
+
+case "ArrowRight":
+playerMove(1);
+break;
+
+case "ArrowDown":
+playerDrop();
+addDropScore();
+break;
+
+case "ArrowUp":
+playerRotate();
+break;
+
+case "KeyZ":
+playerRotate();
+break;
+
+case "KeyX":
+playerRotate();
+break;
+
+case "Space":
+hardDrop();
+break;
+
+case "KeyC":
+hold();
+break;
+
+case "KeyP":
+paused=!paused;
+break;
+
+case "KeyR":
+restart();
+break;
+
+}
+
+}
+);
+
+// ===== 初期化 =====
+
+refillBag();
+
+initQueue();
+
+playerReset();
+
+updateUI();
+
+drawSide();
+
+update();
+
+</script>
+</body>
+</html>
